@@ -1,22 +1,7 @@
 // ===== ARCHIVO PRINCIPAL: juegodetanque.pde =====
 import processing.sound.*;
 
-// === ENUMS (Solo aquí, no duplicar) ===
-enum TipoEnemigo {
-  NORMAL, KAMIKAZE, INVOCADOR, DISABLER, ARTILLERIA, APOYO
-}
-
-enum EstadoJuego {
-  MENU_PRINCIPAL, OPCIONES, JUGANDO, GAME_OVER
-}
-
-enum TipoElemento {
-  KBOOM, ONESHOT, VIDA, PERK_BEBIDA
-}
-
-enum TipoPerk {
-  NINGUNO, DOUBLETAP, SPEEDCOLA
-}
+// Enums movidos a `tipos.pde` para evitar problemas de visibilidad entre tabs
 
 // === VARIABLES GLOBALES ===
 EstadoJuego estadoActual = EstadoJuego.MENU_PRINCIPAL;
@@ -63,10 +48,31 @@ int mensajePerkTiempo = 0;
 String mensajePerkTexto = "";
 color mensajePerkColor;
 
+// Variable para fuente personalizada
+PFont fuenteJuego;
+
 // === FUNCIONES PRINCIPALES ===
 void setup() {
   size(800, 600);
   frameRate(60);
+  
+  // Cargar fuente que soporte caracteres especiales
+  try {
+    // Intentar cargar una fuente del sistema que soporte caracteres especiales
+    fuenteJuego = createFont("Arial", 16, true);
+    textFont(fuenteJuego);
+    println("Fuente Arial cargada correctamente");
+  } catch (Exception e) {
+    try {
+      // Fallback a fuente del sistema
+      fuenteJuego = createFont("SansSerif", 16, true);
+      textFont(fuenteJuego);
+      println("Fuente SansSerif cargada como fallback");
+    } catch (Exception e2) {
+      // Usar fuente por defecto si todo falla
+      println("Usando fuente por defecto del sistema");
+    }
+  }
   
   // Cargar sonidos desde la carpeta data
   try {
@@ -165,6 +171,16 @@ void draw() {
         mostrarPerksActivos();
         mostrarUI();
         
+        // NUEVO: Validación periódica de ángulos cada 300 frames (5 segundos)
+        if (frameCount % 300 == 0) {
+          validarAngulosOleada();
+        }
+        
+        // NUEVO: Validación más frecuente para rondas altas donde ocurre el bug
+        if (oleadaActual >= 3 && frameCount % 60 == 0) { // Cada segundo en rondas altas
+          validarAngulosOleada();
+        }
+        
         if (jugador.estaDestruido() && !modoReparacion) {
           iniciarMiniJuegoReparacion();
         }
@@ -232,7 +248,7 @@ void mostrarGameOver() {
   
   fill(255);
   textSize(30);
-  text("Presiona ESPACIO para reiniciar", width / 2, height / 2 + 40);
+  text("Presiona R para reiniciar", width / 2, height / 2 + 40);
 }
 
 // === FUNCIONES DE INICIALIZACIÓN ===
@@ -322,6 +338,44 @@ void crearEnemigosDeOleada() {
       crearEnemigo(oleadaActual / 3, TipoEnemigo.INVOCADOR);
       break;
   }
+  
+  // NUEVO: Validar ángulos de todos los tanques después de crear la oleada
+  validarAngulosOleada();
+}
+
+// NUEVA: Función para validar ángulos de todos los tanques
+void validarAngulosOleada() {
+  // Validar ángulo del jugador
+  if (jugador != null) {
+    jugador.validarAngulo();
+  }
+  
+  // Validar ángulos de todos los enemigos
+  for (Tanque enemigo : enemigos) {
+    if (enemigo != null) {
+      enemigo.validarAngulo();
+      
+      // NUEVO: Validación especial para enemigos problemáticos en rondas altas
+      if (oleadaActual >= 3) {
+        // Verificar específicamente enemigos que pueden causar problemas
+        if (enemigo.tipoEnemigo == TipoEnemigo.INVOCADOR || 
+            enemigo.tipoEnemigo == TipoEnemigo.DISABLER || 
+            enemigo.tipoEnemigo == TipoEnemigo.ARTILLERIA || 
+            enemigo.tipoEnemigo == TipoEnemigo.APOYO) {
+          
+          // Validación extra para estos tipos
+          if (Float.isNaN(enemigo.angulo) || Float.isInfinite(enemigo.angulo) || 
+              enemigo.angulo > 1000 || enemigo.angulo < -1000) {
+            println("DEBUG: Problema detectado en enemigo " + enemigo.tipoEnemigo + 
+                    " en oleada " + oleadaActual + " - Ángulo: " + enemigo.angulo);
+            enemigo.angulo = 0; // Resetear inmediatamente
+          }
+        }
+      }
+    }
+  }
+  
+  println("DEBUG: Oleada " + oleadaActual + " - Ángulos validados para " + enemigos.size() + " enemigos");
 }
 
 void crearEnemigo(int cantidad, TipoEnemigo tipo) {
@@ -502,7 +556,7 @@ void keyPressed() {
       
     case JUGANDO:
       if (juegoTerminado) {
-        if (key == ' ') {
+        if (key == 'r' || key == 'R') {
           inicializarJuego();
         }
       } else if (modoReparacion) {
@@ -513,6 +567,8 @@ void keyPressed() {
         }
       } else {
         if (key == ' ') {
+          jugador.disparar();
+        } else if (key == 'r' || key == 'R') {
           inicializarJuego();
         } else {
           jugador.controlarMovimiento(true);
@@ -536,7 +592,7 @@ void keyPressed() {
       break;
       
     case GAME_OVER:
-      if (key == ' ') {
+      if (key == 'r' || key == 'R') {
         estadoActual = EstadoJuego.MENU_PRINCIPAL;
       }
       break;
@@ -558,6 +614,13 @@ void mostrarUI() {
   text("Vida: " + int(jugador.vida), 10, 35);
   text("Cantidad de muertes: " + int(jugador.muertes), 10, 60);
   text("Oleada: " + oleadaActual, 10, 85);
+  
+  // Mostrar controles
+  textAlign(RIGHT, TOP);
+  text("Controles:", width - 10, 10);
+  text("WASD = Mover", width - 10, 35);
+  text("ESPACIO = Disparar", width - 10, 60);
+  text("R = Reiniciar", width - 10, 85);
   
   if (reparacionExitosa && frameCount % 60 < 30) {
     fill(0, 255, 0);

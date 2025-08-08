@@ -44,6 +44,11 @@ class Tanque {
   boolean tieneOneshot = false;
   int tiempoOneshot = 0;
 
+  // Variables para monitoreo de ángulos (DEBUG)
+  float anguloAnterior = 0;
+  int contadorCambiosAngulo = 0;
+  int frameUltimoCambio = 0;
+
   // Constructor con 3 parámetros (para compatibilidad)
   Tanque(float x, float y, boolean esJugador) {
     this(x, y, esJugador, TipoEnemigo.NORMAL);
@@ -53,6 +58,8 @@ class Tanque {
   Tanque(float x, float y, boolean esJugador, TipoEnemigo tipo) {
     this.posicion = new PVector(x, y);
     this.velocidad = new PVector(0, 0);
+    this.angulo = 0; // Inicializar ángulo en 0
+    this.anguloAnterior = 0; // Inicializar para monitoreo
     this.esJugador = esJugador;
     this.vida = this.vidaMaxima;
     this.muertes = 0;
@@ -80,6 +87,10 @@ class Tanque {
       
       // Configurar colores y propiedades según el tipo
       configurarTipoEnemigo();
+      
+      // NUEVO: Validación inicial del ángulo para enemigos
+      validarAngulo();
+      println("DEBUG: Enemigo " + tipo + " creado en posición (" + x + ", " + y + ") con ángulo: " + angulo);
     }
   }
   
@@ -163,8 +174,51 @@ class Tanque {
     posicion.add(velocidad);
     limitarAPantalla();
     
-    // Apuntar hacia el mouse
-    this.angulo = atan2(mouseY - posicion.y, mouseX - posicion.x);
+    // SOLUCIONADO: Apuntar hacia el centro del mapa con validación mejorada
+    actualizarAnguloJugador();
+  }
+  
+  // NUEVA: Función específica para actualizar ángulo del jugador
+  void actualizarAnguloJugador() {
+    PVector centro = new PVector(width / 2.0, height / 2.0);
+    float distanciaAlCentro = dist(posicion.x, posicion.y, centro.x, centro.y);
+    
+    // Si está muy cerca del centro, mantener el ángulo actual
+    if (distanciaAlCentro < 5) {
+      validarAngulo(); // Solo validar, no cambiar
+      return;
+    }
+    
+    // Calcular nuevo ángulo de manera más segura
+    try {
+      float deltaX = centro.x - posicion.x;
+      float deltaY = centro.y - posicion.y;
+      
+      // Verificar que los deltas no sean cero o muy pequeños
+      if (abs(deltaX) < 0.001 && abs(deltaY) < 0.001) {
+        validarAngulo(); // Solo validar, no cambiar
+        return;
+      }
+      
+      // Usar atan2 con valores más estables
+      float nuevoAngulo = atan2(deltaY, deltaX);
+      
+      // Validación estricta del nuevo ángulo
+      if (!Float.isNaN(nuevoAngulo) && !Float.isInfinite(nuevoAngulo) && 
+          nuevoAngulo >= -PI && nuevoAngulo <= PI) {
+        // Solo actualizar si el cambio es significativo (evita micro-cambios)
+        float diferenciaAngulo = abs(nuevoAngulo - angulo);
+        if (diferenciaAngulo > 0.01 || diferenciaAngulo > PI) {
+          angulo = nuevoAngulo;
+        }
+      } else {
+        println("DEBUG: Ángulo calculado inválido para jugador: " + nuevoAngulo + " (deltaX: " + deltaX + ", deltaY: " + deltaY + ")");
+        validarAngulo(); // Corregir el ángulo actual
+      }
+    } catch (Exception e) {
+      println("DEBUG: Error calculando ángulo del jugador: " + e.getMessage());
+      validarAngulo(); // Corregir el ángulo actual
+    }
   }
 
   void actualizar(PVector objetivo) { // Para los NPCs - CORREGIDO
@@ -199,8 +253,8 @@ class Tanque {
   }
   
   void comportamientoNormal(PVector objetivo) {
-    // Apuntar al objetivo
-    this.angulo = atan2(objetivo.y - posicion.y, objetivo.x - posicion.x);
+    // SOLUCIONADO: Apuntar al objetivo con validación mejorada
+    actualizarAnguloEnemigo(objetivo);
     
     // CORREGIDO: Inicializar direccionAleatoria si es null
     if (direccionAleatoria == null) {
@@ -218,6 +272,48 @@ class Tanque {
     if (temporizadorDisparo > 90) {
       disparar();
       temporizadorDisparo = 0;
+    }
+  }
+  
+  // NUEVA: Función específica para actualizar ángulo de enemigos
+  void actualizarAnguloEnemigo(PVector objetivo) {
+    float distancia = dist(posicion.x, posicion.y, objetivo.x, objetivo.y);
+    
+    // Solo calcular ángulo si hay distancia suficiente
+    if (distancia < 5) {
+      validarAngulo(); // Solo validar, no cambiar
+      return;
+    }
+    
+    // Calcular nuevo ángulo de manera más segura
+    try {
+      float deltaX = objetivo.x - posicion.x;
+      float deltaY = objetivo.y - posicion.y;
+      
+      // Verificar que los deltas no sean cero o muy pequeños
+      if (abs(deltaX) < 0.001 && abs(deltaY) < 0.001) {
+        validarAngulo(); // Solo validar, no cambiar
+        return;
+      }
+      
+      // Usar atan2 con valores más estables
+      float nuevoAngulo = atan2(deltaY, deltaX);
+      
+      // Validación estricta del nuevo ángulo
+      if (!Float.isNaN(nuevoAngulo) && !Float.isInfinite(nuevoAngulo) && 
+          nuevoAngulo >= -PI && nuevoAngulo <= PI) {
+        // Solo actualizar si el cambio es significativo (evita micro-cambios)
+        float diferenciaAngulo = abs(nuevoAngulo - this.angulo);
+        if (diferenciaAngulo > 0.01 || diferenciaAngulo > PI) {
+          this.angulo = nuevoAngulo;
+        }
+      } else {
+        println("DEBUG: Ángulo calculado inválido para enemigo " + tipoEnemigo + ": " + nuevoAngulo + " (deltaX: " + deltaX + ", deltaY: " + deltaY + ")");
+        validarAngulo(); // Corregir el ángulo actual
+      }
+    } catch (Exception e) {
+      println("DEBUG: Error calculando ángulo de enemigo " + tipoEnemigo + ": " + e.getMessage());
+      validarAngulo(); // Corregir el ángulo actual
     }
   }
   
@@ -250,8 +346,8 @@ class Tanque {
   }
   
   void comportamientoInvocador(PVector objetivo) {
-    // Apuntar al objetivo pero mantenerse a distancia
-    this.angulo = atan2(objetivo.y - posicion.y, objetivo.x - posicion.x);
+    // SOLUCIONADO: Apuntar al objetivo con validación mejorada
+    actualizarAnguloEnemigo(objetivo);
     
     float distancia = dist(posicion.x, posicion.y, objetivo.x, objetivo.y);
     
@@ -283,8 +379,8 @@ class Tanque {
   }
   
   void comportamientoDisabler(PVector objetivo) {
-    // Apuntar al objetivo
-    this.angulo = atan2(objetivo.y - posicion.y, objetivo.x - posicion.x);
+    // SOLUCIONADO: Apuntar al objetivo con validación mejorada
+    actualizarAnguloEnemigo(objetivo);
     
     // CORREGIDO: Inicializar direccionAleatoria si es null
     if (direccionAleatoria == null) {
@@ -311,8 +407,8 @@ class Tanque {
       buscarPosicionArtilleria();
     }
     
-    // Apuntar al objetivo
-    this.angulo = atan2(objetivo.y - posicion.y, objetivo.x - posicion.x);
+    // SOLUCIONADO: Apuntar al objetivo con validación mejorada
+    actualizarAnguloEnemigo(objetivo);
     
     // Disparar proyectiles lentos pero potentes
     temporizadorDisparo++;
@@ -450,6 +546,12 @@ class Tanque {
 
   // --- Métodos de Visualización ---
   void mostrar() {
+    // SOLUCIONADO: Validar ángulo antes de mostrar
+    validarAngulo();
+    
+    // NUEVO: Monitorear cambios de ángulo para detectar problemas
+    monitorearCambioAngulo();
+    
     pushMatrix();
     translate(posicion.x, posicion.y);
 
@@ -492,6 +594,70 @@ class Tanque {
 
     // Barra de vida
     mostrarBarraDeVida();
+  }
+  
+  // NUEVO: Función para validar y corregir ángulos
+  void validarAngulo() {
+    // Verificar si el ángulo es válido
+    if (Float.isNaN(angulo) || Float.isInfinite(angulo)) {
+      println("DEBUG: Ángulo inválido detectado en tanque " + (esJugador ? "jugador" : "enemigo " + tipoEnemigo) + ", reseteando a 0");
+      angulo = 0; // Resetear a un ángulo válido
+      return;
+    }
+    
+    // Verificar valores extremos que podrían causar problemas
+    if (angulo > 1000 || angulo < -1000) {
+      println("DEBUG: Ángulo extremo detectado en " + (esJugador ? "jugador" : "enemigo " + tipoEnemigo) + ": " + angulo + ", reseteando a 0");
+      angulo = 0;
+      return;
+    }
+    
+    // Normalizar el ángulo entre 0 y TWO_PI de manera más robusta
+    // Usar operaciones más estables para evitar errores de precisión
+    while (angulo >= TWO_PI) {
+      angulo -= TWO_PI;
+    }
+    while (angulo < 0) {
+      angulo += TWO_PI;
+    }
+    
+    // Verificación final de que el ángulo está en el rango correcto
+    if (angulo < 0 || angulo >= TWO_PI) {
+      println("DEBUG: Ángulo fuera de rango después de normalización en " + (esJugador ? "jugador" : "enemigo " + tipoEnemigo) + ": " + angulo + ", reseteando a 0");
+      angulo = 0;
+    }
+  }
+  
+  // NUEVO: Función para monitorear cambios de ángulo y detectar problemas
+  void monitorearCambioAngulo() {
+    float diferencia = abs(angulo - anguloAnterior);
+    
+    // Detectar cambios bruscos o anómalos
+    if (diferencia > PI/2 && diferencia < PI*1.5) { // Cambio brusco pero no completo
+      contadorCambiosAngulo++;
+      frameUltimoCambio = frameCount;
+      
+      if (contadorCambiosAngulo > 5) { // Muchos cambios bruscos seguidos
+        println("DEBUG: Muchos cambios bruscos de ángulo detectados en " + 
+                (esJugador ? "jugador" : "enemigo " + tipoEnemigo) + 
+                " - Oleada: " + oleadaActual + 
+                " - Cambios: " + contadorCambiosAngulo);
+        
+        // Resetear el ángulo a un valor estable
+        angulo = 0;
+        contadorCambiosAngulo = 0;
+      }
+    } else if (diferencia < 0.01) {
+      // Cambio normal, resetear contador
+      contadorCambiosAngulo = 0;
+    }
+    
+    // Resetear contador si han pasado muchos frames
+    if (frameCount - frameUltimoCambio > 300) {
+      contadorCambiosAngulo = 0;
+    }
+    
+    anguloAnterior = angulo;
   }
   
   void mostrarEfectosEspeciales() {
@@ -560,6 +726,18 @@ class Tanque {
   void disparar() {
     // CORREGIDO: Verificar que balas no sea null
     if (balas == null) return;
+    
+    // SOLUCIONADO: Validar ángulo antes de disparar
+    validarAngulo();
+    
+    // NUEVO: Verificación extra antes de disparar
+    if (Float.isNaN(angulo) || Float.isInfinite(angulo) || angulo > 1000 || angulo < -1000) {
+      println("DEBUG: Ángulo inválido detectado antes de disparar en " + 
+              (esJugador ? "jugador" : "enemigo " + tipoEnemigo) + 
+              " - Oleada: " + oleadaActual + " - Ángulo: " + angulo);
+      angulo = 0; // Resetear y no disparar
+      return;
+    }
     
     // La bala se crea en la punta del cañón
     float offsetX = cos(angulo) * (tamano * 0.75);
